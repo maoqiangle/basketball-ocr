@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>篮球数据智能OCR与合并工具 | 子瞻成长之路</title>
+    <!-- 引入 SheetJS 用于导出 Excel -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    <style>
+        /* ================= 全局样式 ================= */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --primary: #4f46e5; --primary-hover: #4338ca; --primary-light: #e0e7ff;
+            --success: #059669; --danger: #dc2626; --warning: #d97706;
+            --bg: #f1f5f9; --card: #ffffff; --border: #e2e8f0;
+            --text: #1e293b; --text-muted: #64748b;
+            --shadow: 0 1px 3px rgba(0,0,0,.1); --radius: 8px;
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        
+        /* ================= Header ================= */
+        .header { background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); color: #fff; padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; box-shadow: var(--shadow); z-index: 10; flex-shrink: 0; }
+        .header h1 { font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+        .header-actions { display: flex; gap: 10px; }
+        .btn-icon { background: rgba(255,255,255,.2); border: none; color: #fff; width: 32px; height: 32px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: .2s; }
+        .btn-icon:hover { background: rgba(255,255,255,.3); }
+
+        /* ================= Main Layout ================= */
+        .main-container { flex: 1; display: flex; overflow: hidden; }
+        
+        /* Left Panel: Image Preview */
+        .panel-left { width: 35%; border-right: 1px solid var(--border); display: flex; flex-direction: column; background: var(--card); }
+        .preview-area { flex: 1; background: #f8fafc; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; min-height: 200px; }
+        .preview-placeholder { text-align: center; color: var(--text-muted); }
+        .preview-placeholder .icon { font-size: 48px; opacity: .3; margin-bottom: 10px; }
+        #previewImg { max-width: 100%; max-height: 100%; object-fit: contain; cursor: grab; transition: transform .2s; }
+        #previewImg.dragging { cursor: grabbing; }
+        
+        .nav-controls { padding: 10px; border-top: 1px solid var(--border); display: flex; justify-content: center; gap: 8px; background: #fff; }
+        .nav-btn { padding: 6px 12px; border: 1px solid var(--border); background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .nav-btn:hover:not(:disabled) { background: var(--bg); border-color: var(--primary); }
+        .nav-btn:disabled { opacity: .4; cursor: not-allowed; }
+        
+        .file-info { padding: 8px 12px; font-size: 12px; color: var(--text-muted); border-top: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: #fff; }
+
+        /* Right Panel: Results & Table */
+        .panel-right { width: 65%; display: flex; flex-direction: column; background: var(--card); }
+        
+        /* Top Right: Detail Text */
+        .detail-section { height: 35%; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; }
+        .section-header { padding: 10px 16px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 14px; display: flex; justify-content: space-between; align-items: center; background: #f8fafc; }
+        .detail-content { flex: 1; padding: 16px; overflow-y: auto; font-family: monospace; font-size: 13px; line-height: 1.5; white-space: pre-wrap; background: #fff; border-bottom: 1px solid var(--border); }
+        .detail-content.empty { display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-family: inherit; }
+
+        /* Bottom Right: Data Table */
+        .table-section { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .table-container { flex: 1; overflow: auto; padding: 0; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th { position: sticky; top: 0; background: #f8fafc; padding: 8px; text-align: left; font-weight: 600; border-bottom: 2px solid var(--border); color: var(--text-muted); z-index: 5; white-space: nowrap; }
+        td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+        tr:hover td { background: #f8fafc; }
+        td.editable { cursor: text; }
+        td.editable:focus { outline: 2px solid var(--primary); background: #fff; }
+        
+        /* Footer Actions */
+        .footer-actions { padding: 12px 24px; background: #fff; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+        .action-group { display: flex; gap: 10px; }
+        
+        .btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; transition: .2s; }
+        .btn-primary { background: var(--primary); color: #fff; }
+        .btn-primary:hover { background: var(--primary-hover); }
+        .btn-secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+        .btn-secondary:hover { background: #e2e8f0; }
+        .btn-success { background: var(--success); color: #fff; }
+        .btn-success:hover { background: #047857; }
+        .btn-danger { background: #fee2e2; color: var(--danger); border: 1px solid #fecaca; }
+        .btn-danger:hover { background: #fecaca; }
+        .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+        /* Modal & Toast */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: none; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(4px); }
+        .modal-overlay.active { display: flex; }
+        .modal { background: #fff; border-radius: 12px; padding: 24px; width: 90%; max-width: 450px; box-shadow: 0 20px 25px -5px rgba(0,0,0,.1); animation: modalIn .2s ease; }
+        @keyframes modalIn { from { transform: scale(.95); opacity: 0 } to { transform: scale(1); opacity: 1 } }
+        .modal h2 { font-size: 18px; margin-bottom: 16px; }
+        .form-group { margin-bottom: 14px; }
+        .form-group label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+        .form-group input, .form-group textarea { width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
+        .form-group input:focus, .form-group textarea:focus { outline: none; border-color: var(--primary); }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+        
+        .toast-container { position: fixed; top: 20px; right: 20px; z-index: 2000; display: flex; flex-direction: column; gap: 8px; }
+        .toast { padding: 10px 16px; border-radius: 6px; color: #fff; font-size: 13px; box-shadow: 0 4px 6px -1px rgba(0,0,0,.1); animation: toastIn .3s ease, toastOut .3s ease 2.7s forwards; }
+        .toast.success { background: var(--success); }
+        .toast.error { background: var(--danger); }
+        .toast.warning { background: var(--warning); }
+        @keyframes toastIn { from { transform: translateX(100%); opacity: 0 } to { transform: translateX(0); opacity: 1 } }
+        @keyframes toastOut { from { opacity: 1 } to { opacity: 0 } }
+
+        .progress-bar { height: 3px; background: var(--border); width: 100%; position: absolute; top: 0; left: 0; display: none; }
+        .progress-bar.active { display: block; }
+        .progress-fill { height: 100%; background: var(--primary); width: 0; transition: width .3s; }
+        
+        #fileInput, #folderInput { display: none; }
+        
+        /* Tag Styles for File Types */
+        .tag { padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-left: 5px; }
+        .tag-block { background: #dbeafe; color: #1e40af; }
+        .tag-table { background: #dcfce7; color: #166534; }
+        .tag-unknown { background: #f3f4f6; color: #4b5563; }
+    </style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+    <h1>🏀 篮球数据智能OCR与合并工具</h1>
+    <div class="header-actions">
+        <button class="btn-icon" onclick="showSettings()" title="⚙️ 设置">⚙️</button>
+    </div>
+</div>
+
+<!-- Main Content -->
+<div class="main-container">
+    <!-- Left: Image Preview -->
+    <div class="panel-left">
+        <div class="preview-area" id="previewArea">
+            <div class="progress-bar" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
+            <div class="preview-placeholder" id="placeholder">
+                <div class="icon">📷</div>
+                <p>拖拽图片到此处<br>或点击下方导入</p>
+            </div>
+            <img id="previewImg" alt="Preview">
+        </div>
+        <div class="nav-controls">
+            <button class="nav-btn" onclick="zoomIn()">🔍+</button>
+            <button class="nav-btn" onclick="zoomOut()">🔍-</button>
+            <button class="nav-btn" onclick="resetZoom()">↺</button>
+            <button class="nav-btn" id="prevBtn" onclick="prevImage()" disabled>◀</button>
+            <span style="font-size:12px; color:var(--text-muted); min-width:40px; text-align:center;" id="pageInfo">0/0</span>
+            <button class="nav-btn" id="nextBtn" onclick="nextImage()" disabled>▶</button>
+        </div>
+        <div class="file-info" id="fileInfo">未选择图片</div>
+    </div>
+
+    <!-- Right: Details & Table -->
+    <div class="panel-right">
+        <!-- Top: Detail View -->
+        <div class="detail-section">
+            <div class="section-header">
+                <span>📝 OCR 原始文本 (可手动修正)</span>
+                <button class="btn btn-secondary" style="padding:4px 8px; font-size:12px;" onclick="copyCurrentDetail()">复制</button>
+            </div>
+            <div class="detail-content empty" id="detailContent" contenteditable="true">
+                识别结果将显示在此处...
+            </div>
+        </div>
+
+        <!-- Bottom: Data Table -->
+        <div class="table-section">
+            <div class="section-header">
+                <span>📊 合并后数据 (<span id="rowCount">0</span> 条)</span>
+                <div style="display:flex; gap:8px;">
+                    <button class="btn btn-secondary" style="padding:4px 8px; font-size:12px;" onclick="clearTable()">清空</button>
+                    <button class="btn btn-secondary" style="padding:4px 8px; font-size:12px;" onclick="reMergeData()">🔄 重新合并</button>
+                </div>
+            </div>
+            <div class="table-container">
+                <table id="dataTable">
+                    <thead>
+                        <tr>
+                            <th style="width:40px">#</th>
+                            <th style="width:100px">文件名</th>
+                            <th style="width:80px">类型</th>
+                            <th>玩家昵称/球员卡</th>
+                            <th>队伍</th>
+                            <th>位置</th>
+                            <th>投篮</th>
+                            <th>三分</th>
+                            <th>篮板</th>
+                            <th>助攻</th>
+                            <th>抢断</th>
+                            <th>盖帽</th>
+                            <th>失误</th>
+                            <th>得分</th>
+                            <th>稀有度</th>
+                            <th>影响力</th>
+                            <th>标签</th>
+                            <th style="width:40px">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody">
+                        <!-- Rows will be added here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Footer Actions -->
+<div class="footer-actions">
+    <div class="action-group">
+        <button class="btn btn-secondary" onclick="importFiles()">📂 导入文件</button>
+        <button class="btn btn-secondary" onclick="importFolder()">📁 导入文件夹</button>
+        <button class="btn btn-danger" onclick="clearAll()">🗑️ 清空全部</button>
+    </div>
+    <div class="action-group">
+        <button class="btn btn-primary" id="extractBtn" onclick="startExtraction()">🚀 开始OCR识别</button>
+        <button class="btn btn-success" id="exportBtn" onclick="exportToExcel()" disabled>💾 导出 Excel</button>
+    </div>
+</div>
+
+<!-- Hidden Inputs -->
+<input type="file" id="fileInput" multiple accept=".jpg,.jpeg,.png,.bmp,.gif,.webp">
+<input type="file" id="folderInput" webkitdirectory multiple accept=".jpg,.jpeg,.png,.bmp,.gif,.webp">
+
+<!-- Settings Modal -->
+<div class="modal-overlay" id="settingsModal">
+    <div class="modal">
+        <h2>⚙️ 设置</h2>
+        <div class="form-group">
+            <label>Worker 代理地址</label>
+            <input type="text" id="workerUrlInput" placeholder="https://your-worker.workers.dev">
+        </div>
+        <div class="form-group">
+            <label>代理密码</label>
+            <input type="password" id="proxySecretInput" placeholder="Your Secret Password">
+        </div>
+        <div class="form-group">
+            <label>模型名称</label>
+            <input type="text" id="modelNameInput" value="doubao-seed-1-8-251228">
+        </div>
+        <div class="form-group">
+            <label>提示词</label>
+            <textarea id="promptInput" rows="2">请提取图片中的文字信息，保持原有换行格式，不要添加任何解释性文字。</textarea>
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-secondary" onclick="hideSettings()">取消</button>
+            <button class="btn btn-primary" onclick="saveSettings()">保存</button>
+        </div>
+    </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+// ============================================================
+//  State & Config
+// ============================================================
+const SUPPORTED_FORMATS = new Set(['.jpg','.jpeg','.png','.bmp','.gif','.webp']);
+let config = {
+    workerUrl: localStorage.getItem('ocr_worker_url') || '',
+    proxySecret: localStorage.getItem('ocr_proxy_secret') || '',
+    modelName: localStorage.getItem('ocr_model') || 'doubao-seed-1-8-251228',
+    prompt: localStorage.getItem('ocr_prompt') || '请提取图片中的文字信息，保持原有换行格式，不要添加任何解释性文字。'
+};
+
+let imageFiles = []; // { name, file, url, base64, textContent, fileType }
+let currentIndex = 0;
+let zoomLevel = 1;
+let isProcessing = false;
+let mergedData = []; // Final merged data for Excel
+let dragStartX = 0, dragStartY = 0, panX = 0, panY = 0, isDragging = false;
+
+// ============================================================
+//  Initialization
+// ============================================================
+document.addEventListener('DOMContentLoaded', () => {
+    bindEvents();
+    updateUI();
+});
+
+function bindEvents() {
+    document.getElementById('fileInput').addEventListener('change', e => handleFiles(e.target.files));
+    document.getElementById('folderInput').addEventListener('change', e => handleFiles(e.target.files));
+    
+    const pa = document.getElementById('previewArea');
+    pa.addEventListener('dragover', e => { e.preventDefault(); pa.style.background = '#e0e7ff'; });
+    pa.addEventListener('dragleave', () => { pa.style.background = '#f8fafc'; });
+    pa.addEventListener('drop', e => {
+        e.preventDefault(); pa.style.background = '#f8fafc';
+        handleFiles(e.dataTransfer.files);
+    });
+
+    document.getElementById('settingsModal').addEventListener('click', e => {
+        if (e.target === e.currentTarget) hideSettings();
+    });
+
+    const img = document.getElementById('previewImg');
+    img.addEventListener('mousedown', e => {
+        if (zoomLevel <= 1) return;
+        isDragging = true; dragStartX = e.clientX - panX; dragStartY = e.clientY - panY;
+        img.classList.add('dragging');
+    });
+    document.addEventListener('mousemove', e => {
+        if (!isDragging) return;
+        panX = e.clientX - dragStartX; panY = e.clientY - dragStartY;
+        applyTransform();
+    });
+    document.addEventListener('mouseup', () => { isDragging = false; img.classList.remove('dragging'); });
+    
+    pa.addEventListener('wheel', e => {
+        e.preventDefault();
+        if (e.deltaY < 0) zoomIn(); else zoomOut();
+    }, { passive: false });
+
+    // Table Edit Listener
+    document.getElementById('tableBody').addEventListener('input', e => {
+        if (e.target.tagName === 'TD' && e.target.classList.contains('editable')) {
+            const row = e.target.closest('tr');
+            const index = parseInt(row.dataset.index);
+            const field = e.target.dataset.field;
+            if (mergedData[index]) {
+                mergedData[index][field] = e.target.innerText;
+            }
+        }
+    });
+}
+
+// ============================================================
+//  Settings
+// ============================================================
+function showSettings() {
+    document.getElementById('workerUrlInput').value = config.workerUrl;
+    document.getElementById('proxySecretInput').value = config.proxySecret;
+    document.getElementById('modelNameInput').value = config.modelName;
+    document.getElementById('promptInput').value = config.prompt;
+    document.getElementById('settingsModal').classList.add('active');
+}
+function hideSettings() { document.getElementById('settingsModal').classList.remove('active'); }
+function saveSettings() {
+    const url = document.getElementById('workerUrlInput').value.trim();
+    const secret = document.getElementById('proxySecretInput').value.trim();
+    if (!url || !secret) { showToast('请填写完整配置', 'warning'); return; }
+    
+    config.workerUrl = url;
+    config.proxySecret = secret;
+    config.modelName = document.getElementById('modelNameInput').value.trim();
+    config.prompt = document.getElementById('promptInput').value.trim();
+    
+    localStorage.setItem('ocr_worker_url', config.workerUrl);
+    localStorage.setItem('ocr_proxy_secret', config.proxySecret);
+    localStorage.setItem('ocr_model', config.modelName);
+    localStorage.setItem('ocr_prompt', config.prompt);
+    
+    hideSettings();
+    updateUI();
+    showToast('设置已保存', 'success');
+}
+
+// ============================================================
+//  File Handling
+// ============================================================
+function importFiles() { document.getElementById('fileInput').click(); }
+function importFolder() { document.getElementById('folderInput').click(); }
+
+function handleFiles(fileList) {
+    const files = Array.from(fileList).filter(f => SUPPORTED_FORMATS.has('.' + f.name.split('.').pop().toLowerCase()));
+    if (files.length === 0) { showToast('未找到有效图片', 'warning'); return; }
+
+    imageFiles.forEach(img => URL.revokeObjectURL(img.url));
+    imageFiles = files.map(f => ({ 
+        name: f.name, 
+        file: f, 
+        url: URL.createObjectURL(f), 
+        base64: null, 
+        textContent: '', 
+        fileType: 'unknown',
+        parsedData: null 
+    }));
+    
+    currentIndex = 0;
+    zoomLevel = 1; panX = 0; panY = 0;
+    
+    displayImage(0);
+    updateNav();
+    showToast(`已加载 ${files.length} 张图片`, 'success');
+    convertToBase64(0);
+    updateUI();
+}
+
+async function convertToBase64(index) {
+    if (index < 0 || index >= imageFiles.length) return;
+    const img = imageFiles[index];
+    if (img.base64) return;
+    return new Promise(resolve => {
+        const reader = new FileReader();
+        reader.onload = e => { img.base64 = e.target.result; resolve(); };
+        reader.readAsDataURL(img.file);
+    });
+}
+
+// ============================================================
+//  Image Display
+// ============================================================
+function displayImage(index) {
+    if (index < 0 || index >= imageFiles.length) return;
+    const img = imageFiles[index];
+    const preview = document.getElementById('previewImg');
+    const placeholder = document.getElementById('placeholder');
+    
+    preview.src = img.url;
+    preview.classList.add('visible');
+    placeholder.style.display = 'none';
+    
+    zoomLevel = 1; panX = 0; panY = 0;
+    applyTransform();
+    currentIndex = index;
+    
+    document.getElementById('fileInfo').textContent = `${img.name} (${(img.file.size/1024).toFixed(1)} KB)`;
+    updateNav();
+    
+    // Show OCR text if available
+    const detailDiv = document.getElementById('detailContent');
+    if (img.textContent) {
+        detailDiv.textContent = img.textContent;
+        detailDiv.classList.remove('empty');
+    } else {
+        detailDiv.textContent = '等待识别...';
+        detailDiv.classList.add('empty');
+    }
+}
+
+function applyTransform() {
+    document.getElementById('previewImg').style.transform = `scale(${zoomLevel}) translate(${panX/zoomLevel}px, ${panY/zoomLevel}px)`;
+}
+function zoomIn() { zoomLevel = Math.min(zoomLevel * 1.2, 5); applyTransform(); }
+function zoomOut() { zoomLevel = Math.max(zoomLevel / 1.2, 0.2); if(zoomLevel<=1){panX=0;panY=0;} applyTransform(); }
+function resetZoom() { zoomLevel=1; panX=0; panY=0; applyTransform(); }
+function prevImage() { if(currentIndex>0 && !isProcessing) displayImage(currentIndex-1); }
+function nextImage() { if(currentIndex<imageFiles.length-1 && !isProcessing) displayImage(currentIndex+1); }
+function updateNav() {
+    document.getElementById('pageInfo').textContent = `${currentIndex+1}/${imageFiles.length}`;
+    document.getElementById('prevBtn').disabled = currentIndex <= 0 || isProcessing;
+    document.getElementById('nextBtn').disabled = currentIndex >= imageFiles.length-1 || isProcessing;
+}
+
+// ============================================================
+//  OCR Logic
+// ============================================================
+async function startExtraction() {
+    if (imageFiles.length === 0) { showToast('请先导入图片', 'warning'); return; }
+    if (!config.workerUrl) { showToast('请配置 Worker 地址', 'warning'); showSettings(); return; }
+    if (isProcessing) return;
+
+    isProcessing = true;
+    updateUI();
+    
+    const progressBar = document.getElementById('progressBar');
+    const progressFill = document.getElementById('progressFill');
+    progressBar.classList.add('active');
+
+    for (let i = 0; i < imageFiles.length; i++) {
+        const img = imageFiles[i];
+        if (img.textContent) continue; // Skip if already processed
+
+        progressFill.style.width = `${((i)/imageFiles.length)*100}%`;
+        displayImage(i);
+        
+        try {
+            await convertToBase64(i);
+            const text = await callAPI(img.base64);
+            img.textContent = text;
+            
+            // Auto-detect file type
+            img.fileType = detectFileType(text);
+            
+            // Update detail view if current
+            if (i === currentIndex) {
+                document.getElementById('detailContent').textContent = text;
+                document.getElementById('detailContent').classList.remove('empty');
+            }
+            
+        } catch (err) {
+            console.error(err);
+            showToast(`识别失败: ${img.name}`, 'error');
+        }
+        
+        await new Promise(r => setTimeout(r, 500));
+    }
+
+    progressFill.style.width = '100%';
+    setTimeout(() => progressBar.classList.remove('active'), 500);
+    isProcessing = false;
+    
+    // Auto merge after extraction
+    reMergeData();
+    
+    updateUI();
+    showToast('OCR 识别完成，正在合并数据...', 'success');
+}
+
+async function callAPI(base64Data) {
+    const res = await fetch(config.workerUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Proxy-Secret': config.proxySecret },
+        body: JSON.stringify({
+            model: config.modelName,
+            messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: base64Data } }, { type: 'text', text: config.prompt }] }]
+        })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content || '';
+}
+
+// ============================================================
+//  Data Parsing & Merging Logic (Ported from Python)
+// ============================================================
+
+function detectFileType(text) {
+    // Priority: Block Type (Lv XX Nickname)
+    if (/^Lv \d+\s+\S/m.test(text)) {
+        return "block";
+    }
+    // Table Type (Red/Blue Team + Headers)
+    else if ((text.includes("红队") || text.includes("蓝队")) && 
+             text.includes("球员名") && 
+             text.includes("位置") && 
+             text.includes("投篮")) {
+        return "table";
+    }
+    return "unknown";
+}
+
+function parseTableLog(text) {
+    const statsMap = {};
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+    let currentTeam = "";
+    
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line === "红队" || line === "蓝队") {
+            currentTeam = line;
+            continue;
+        }
+        if (line.includes("球员名") && line.includes("位置") && line.includes("投篮")) {
+            continue; // Skip header
+        }
+
+        const parts = line.split(/\s+/);
+        if (parts.length < 10) continue;
+
+        try {
+            const playerCard = parts[0];
+            const position = parts[1];
+            const shot = parts[2];
+            const three = parts[3];
+            const reb = parts[4];
+            const ast = parts[5];
+            const stl = parts[6];
+            const blk = parts[7];
+            const tov = parts[8];
+            const pts = parts[9];
+            const label = parts.slice(10).join(" ");
+
+            const fingerprint = `${playerCard}__${shot}__${pts}`;
+            statsMap[fingerprint] = {
+                team: currentTeam,
+                playerCard: playerCard,
+                position: position,
+                shot: shot,
+                three: three,
+                reb: reb,
+                ast: ast,
+                stl: stl,
+                blk: blk,
+                tov: tov,
+                pts: pts,
+                label: label
+            };
+        } catch (e) { /* Ignore parsing errors */ }
+    }
+    return statsMap;
+}
+
+function parseBlockLog(text) {
+    const players = [];
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+    
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (/^Lv \d+\s+.+/.test(line)) {
+            const nickname = line.replace(/^Lv \d+\s+/, '');
+            i++;
+            if (i >= lines.length) break;
+            const room = lines[i]; // e.g., "苍穹"
+            
+            i++;
+            if (i >= lines.length) break;
+
+            // Read labels until a line with digits appears
+            const labelParts = [];
+            while (i < lines.length && !/\d/.test(lines[i])) {
+                labelParts.push(lines[i]);
+                i++;
+            }
+            const label = labelParts.join(" ");
+
+            if (i >= lines.length) break;
+            const dataLine1 = lines[i].replace(/\s+/g, ''); // Remove spaces for parsing
+            i++;
+            if (i >= lines.length) break;
+            const shotStr = lines[i].trim();
+            i++;
+            if (i >= lines.length) break;
+            const influence = lines[i].trim();
+            i++;
+
+            // Parse Stats
+            let pts='', reb='', ast='';
+            const match1 = dataLine1.match(/(\d+)\/(\d+)\/(\d+)/);
+            if (match1) {
+                pts = match1[1]; reb = match1[2]; ast = match1[3];
+            }
+
+            let shot = '';
+            const match2 = shotStr.match(/(\d+)-(\d+)/);
+            if (match2) {
+                shot = `${match2[1]}-${match2[2]}`;
+            }
+
+            // Position & Rarity
+            let pos = '', rarity = '';
+            if (i < lines.length) {
+                const posRarityLine = lines[i].trim();
+                const parts = posRarityLine.split(/\s+/);
+                pos = parts[0] || '';
+                rarity = parts[1] || '';
+                i++;
+            }
+
+            // Player Card
+            const playerCard = (i < lines.length) ? lines[i] : '';
+
+            const fingerprint = (playerCard && shot && pts) ? `${playerCard}__${shot}__${pts}` : null;
+
+            players.push({
+                nickname: nickname,
+                label: label,
+                playerCard: playerCard,
+                rarity: rarity,
+                position: pos,
+                influence: influence,
+                fingerprint: fingerprint
+            });
+        }
+    }
+    return players;
+}
+
+function reMergeData() {
+    // Collect all texts
+    const blockTexts = [];
+    const tableTexts = [];
+    
+    imageFiles.forEach(img => {
+        if (img.fileType === 'block') blockTexts.push(img.textContent);
+        if (img.fileType === 'table') tableTexts.push(img.textContent);
+    });
+
+    if (blockTexts.length === 0) {
+        showToast('未检测到“主表”（块状日志），无法合并', 'warning');
+        return;
+    }
+    if (tableTexts.length === 0) {
+        showToast('未检测到“明细表”（表格日志），将仅显示主表数据', 'warning');
+    }
+
+    // Combine all table stats into one map
+    let globalStatsMap = {};
+    tableTexts.forEach(txt => {
+        const stats = parseTableLog(txt);
+        globalStatsMap = { ...globalStatsMap, ...stats };
+    });
+
+    // Parse all block logs and merge
+    mergedData = [];
+    blockTexts.forEach(txt => {
+        const players = parseBlockLog(txt);
+        players.forEach(p => {
+            const row = {
+                '玩家昵称': p.nickname,
+                '球员卡': p.playerCard,
+                '队伍': '未知',
+                '标签': p.label, // Default to block label
+                '稀有度': p.rarity,
+                '影响力': p.influence,
+                '位置': p.position,
+                '投篮': '',
+                '三分': '',
+                '篮板': '',
+                '助攻': '',
+                '抢断': '',
+                '盖帽': '',
+                '失误': '',
+                '得分': ''
+            };
+
+            if (p.fingerprint && globalStatsMap[p.fingerprint]) {
+                const stat = globalStatsMap[p.fingerprint];
+                row['队伍'] = stat.team;
+                row['投篮'] = stat.shot;
+                row['三分'] = stat.three;
+                row['篮板'] = stat.reb;
+                row['助攻'] = stat.ast;
+                row['抢断'] = stat.stl;
+                row['盖帽'] = stat.blk;
+                row['失误'] = stat.tov;
+                row['得分'] = stat.pts;
+                row['位置'] = stat.position; // Override position if available in table
+                row['标签'] = stat.label; // Override label with table label
+            }
+            mergedData.push(row);
+        });
+    });
+
+    renderTable();
+    showToast(`数据合并完成，共 ${mergedData.length} 条记录`, 'success');
+}
+
+// ============================================================
+//  Table & Export
+// ============================================================
+function renderTable() {
+    const tbody = document.getElementById('tableBody');
+    tbody.innerHTML = '';
+    document.getElementById('rowCount').textContent = mergedData.length;
+    
+    mergedData.forEach((item, index) => {
+        const tr = document.createElement('tr');
+        tr.dataset.index = index;
+        
+        // Helper to create editable cell
+        const cell = (val, field) => `<td class="editable" contenteditable="true" data-field="${field}">${escapeHtml(val)}</td>`;
+        const staticCell = (val) => `<td>${escapeHtml(val)}</td>`;
+
+        tr.innerHTML = `
+            <td>${index + 1}</td>
+            <td>-</td>
+            <td><span class="tag tag-block">主表</span></td>
+            ${staticCell(item['玩家昵称'])}
+            ${staticCell(item['队伍'])}
+            ${cell(item['位置'], '位置')}
+            ${cell(item['投篮'], '投篮')}
+            ${cell(item['三分'], '三分')}
+            ${cell(item['篮板'], '篮板')}
+            ${cell(item['助攻'], '助攻')}
+            ${cell(item['抢断'], '抢断')}
+            ${cell(item['盖帽'], '盖帽')}
+            ${cell(item['失误'], '失误')}
+            ${cell(item['得分'], '得分')}
+            ${staticCell(item['稀有度'])}
+            ${staticCell(item['影响力'])}
+            ${cell(item['标签'], '标签')}
+            <td style="text-align:center;"><button class="btn-delete" onclick="deleteRow(${index})" style="color:red;border:none;background:none;cursor:pointer;">×</button></td>
+        `;
+        tbody.appendChild(tr);
+    });
+    
+    document.getElementById('exportBtn').disabled = mergedData.length === 0;
+}
+
+function deleteRow(index) {
+    mergedData.splice(index, 1);
+    renderTable();
+}
+
+function clearTable() {
+    if(confirm('确定清空表格数据吗？')) {
+        mergedData = [];
+        renderTable();
+    }
+}
+
+function copyCurrentDetail() {
+    const text = document.getElementById('detailContent').innerText;
+    navigator.clipboard.writeText(text).then(() => showToast('已复制', 'success'));
+}
+
+function exportToExcel() {
+    if (mergedData.length === 0) return;
+    
+    const ws = XLSX.utils.json_to_sheet(mergedData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "篮球数据合并结果");
+    
+    // Auto-width
+    const colWidths = [
+        {wch:10}, {wch:15}, {wch:8}, {wch:10}, {wch:8}, {wch:8}, {wch:8}, {wch:8}, {wch:8}, {wch:8}, {wch:8}, {wch:8}, {wch:8}, {wch:8}, {wch:8}, {wch:15}
+    ];
+    ws['!cols'] = colWidths;
+
+    const fileName = `篮球数据_合并结果_${new Date().toISOString().slice(0,10)}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+    showToast('Excel 已下载', 'success');
+}
+
+// ============================================================
+//  Utilities
+// ============================================================
+function clearAll() {
+    if(isProcessing) return;
+    if(!confirm('清空所有图片和数据？')) return;
+    imageFiles = [];
+    mergedData = [];
+    currentIndex = 0;
+    document.getElementById('previewImg').classList.remove('visible');
+    document.getElementById('placeholder').style.display = '';
+    document.getElementById('detailContent').textContent = '识别结果将显示在此处...';
+    document.getElementById('detailContent').classList.add('empty');
+    renderTable();
+    updateUI();
+}
+
+function updateUI() {
+    const btn = document.getElementById('extractBtn');
+    btn.disabled = isProcessing || imageFiles.length === 0;
+    btn.textContent = isProcessing ? '识别中...' : '🚀 开始OCR识别';
+}
+
+function showToast(msg, type='info') {
+    const container = document.getElementById('toastContainer');
+    const div = document.createElement('div');
+    div.className = `toast ${type}`;
+    div.textContent = msg;
+    container.appendChild(div);
+    setTimeout(() => div.remove(), 3000);
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+</script>
+
+</body>
+</html>
